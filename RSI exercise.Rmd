@@ -1,0 +1,188 @@
+---
+title: "RSI Exercise"
+author: "Rohan Agarwal"
+date: '2022-10-14'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup}
+library (haven)
+library (Hmisc)
+library (stargazer)
+library (tidyverse)
+library (dplyr)
+library(ggplot2)
+library (TSstudio)
+library (zoo)
+library(data.table)
+setwd("~/Desktop/HFT/Trading indicators python/Trading-Indicators")
+
+```
+
+# In this R practice, I will use stock price data from the past 5 years to construct a Relative Stength Index. \n  
+**The RSI is a momentum indicator that is used in technical analysis to:**  \n
+
+- measure the speed and magnitude of a security's recent price changes.  \n
+
+- evaluate undervalued and overvalued conditions in security price.  \n
+
+The RSI indicates securities primed for trend reversals and collective price pullbacks. \n
+
+It signals to traders when to buy and when to sell. \n
+
+- **RSI > 70:** the stock is overbought **(overvalued).**  \n
+
+- **RSI < 30:** the stock is oversold **(undervalued).**  \n 
+
+It compares the strength of securities on days when prices go up to the strength on days when they go down. \n
+
+$$
+RSI_{stepone}= 100 - [\frac{100}{1+\frac{avg. gain}{avg. loss}}]
+$$
+
+$$
+RSI_{steptwo} = 100 - [\frac{100}{1 + \frac{(Pvt. Avg. Gain * 13)+current gain}
+{(Pvt. Avg. Loss * 13) + current loss}}]
+$$
+**Installing the libraries that will allow me to download the data.**  \n
+
+For this program, I will calculate the RSI for the following 6 tech stocks:  \n
+- Meta  \n
+
+- Amazon  \n
+
+- Apple  \n
+
+- Netflix \n
+
+- Google  \n
+
+- Microsoft  \n
+
+```{r libraries to download the data from Yahoo finance}
+library(quantmod)
+library (broom)
+library (magrittr)
+```
+
+Defining the start and end dates for the program and getting the stock price data required. \n
+
+```{r dates}
+start <- as.Date ("2017-10-14")
+end <- as.Date ("2022-10-14")
+getSymbols(c("META", "AMZN","AAPL","NFLX","GOOG","MSFT"), src = "yahoo", from = start, to = end)
+```
+
+## Reorganizing the data to keep only the adjusted closing share price \n
+**Using an XTS object for the share price time series data.** \n
+
+```{r}
+stocks = as.xts(data.frame (Meta = META[,"META.Adjusted"],
+                            Amazon = AMZN[, "AMZN.Adjusted"],
+                            Apple = AAPL[, "AAPL.Adjusted"],
+                            Netflix = NFLX[, "NFLX.Adjusted"],
+                            Alphabet = GOOG[, "GOOG.Adjusted"],
+                            Microsoft = MSFT[, "MSFT.Adjusted"])
+                )
+colnames(stocks) <- c("Meta", "Amazon", "Apple", "Netflix", "Alphabet", "Microsoft")
+index(stocks) = as.Date(index(stocks))
+```
+
+
+**Plotting the stock prices of the 6 stocks of interest.** \n
+
+```{r}
+stocks_series = tidy(stocks) %>%
+  ggplot(aes(x= index, y = value, color = series))+
+  labs(title = "Stock prices of 6 large US technology companies",
+       subtitle = "Dates: October 14, 2017 to October 14, 2022",
+       caption = "Source: Yahoo Finance")+
+  xlab("Date") + ylab ("Price (US$)") + 
+  scale_color_manual(values = c("Blue", "Yellow", "Gray", "Red", "Green", "Orange")) +
+  geom_line()
+
+stocks_series
+```
+
+# Programming the RSI function.  \n
+
+- First, I will program RSI functions for each of the six stocks which I have. \n
+
+- Step 1 : add columns containing the RSI for each of the six stocks next to their adjusted closing price. \n
+
+- Step 2: Create diagrams with the stock price graph above and the RSI graph below for each of the six stocks chosen for this analysis. 
+
+
+```{r}
+
+
+myRSI <- function (price,n){
+  N <- length(price)
+  U <- rep(0,N)
+  D <- rep(0,N)
+  rsi <- rep(NA,N)
+  Lprice <- Lag(price,1)
+  for (i in 2:N){
+    if (price[i]>=Lprice[i]){
+      U[i] <- 1
+    } else {
+      D[i] <- 1
+    }
+    if (i>n){
+      AvgUp <- mean(U[(i-n+1):i])
+      AvgDn <- mean(D[(i-n+1):i])
+      rsi[i] <- AvgUp/(AvgUp+AvgDn)*100 
+      }
+    }
+  rsi <- reclass(rsi, price)
+  return(rsi)
+}
+
+
+rsi_meta <- myRSI(stocks$Meta, n = 14)
+rsi_amzn <-myRSI(stocks$Amazon, n =14)
+rsi_aapl <- myRSI(stocks$Apple, n = 14)
+rsi_nflx <- myRSI (stocks$Netflix, n = 14)
+rsi_goog <- myRSI (stocks$Alphabet, n =14)
+rsi_msft <- myRSI (stocks$Microsoft, n = 14)
+
+```
+
+**Adding the 6 RSI XTS objects to the stocks XTS object and dsiplaying descriptive statistics about the RSIs**
+
+``` {r}
+stocks.f <- merge (stocks, rsi_meta, rsi_amzn, rsi_aapl, rsi_nflx, rsi_goog, rsi_msft)
+colnames(stocks.f) <- c("Meta", "Amazon", "Apple", "Netflix", "Alphabet", "Microsoft", "Meta RSI", "Amazon RSI", 
+                        "Apple RSI", "Netflix RSI", "Alphabet RSI", "Microsoft RSI")
+stocks.df <- as.data.frame(stocks.f)
+
+stargazer (stocks.df, min.max = TRUE, mean.sd = TRUE, nobs = TRUE, median = TRUE, 
+           iqr = TRUE, align = TRUE,
+           type = "text", title = "Descriptive Statistics about the mean stock price and RSI functions of the six technology companies", 
+           digits = 3)
+```
+
+**Creating graphs using *ggplot2* with the stock price on top and the RSI on the bottom **
+
+```{r}
+
+stocks_series2 = tidy(stocks.f) %>% 
+  
+  ggplot(aes(x=index,y=value, color=series)) + 
+  geom_line() +
+  facet_grid(series~.,scales = "free") + 
+  labs(title = "6 Large US Technology Companies October 14, 2017 to October 14, 2022",
+                                              
+                                              subtitle = "End of Day Adjusted Prices and RSI",
+                                              caption = " Source: Yahoo Finance") +
+  
+  xlab("Date") + ylab("Price($) and RSI (0 to 100)") +
+  scale_color_manual(values = c("Red", "Black", "DarkBlue","Orange", "Grey", "Pink", "Brown", "Yellow", "Green", "Blue", "Purple", "Blue"))
+stocks_series2
+
+```
+
+
+
